@@ -16,10 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,13 +39,16 @@ import androidx.compose.ui.unit.dp
 import com.khatwa.app.data.ActivityStore
 import com.khatwa.app.data.ActivitySummary
 import com.khatwa.app.data.ActivityType
+import com.khatwa.app.data.Profile
+import com.khatwa.app.tracking.Calories
 import com.khatwa.app.util.Fmt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 
 @Composable
-fun StatsScreen(profileId: String) {
+fun StatsScreen(profile: Profile) {
+    val profileId = profile.id
     val ctx = LocalContext.current
     var all by remember { mutableStateOf<List<ActivitySummary>>(emptyList()) }
     LaunchedEffect(profileId) {
@@ -105,7 +111,7 @@ fun StatsScreen(profileId: String) {
                 selected = weekMode, onClick = { weekMode = true },
                 label = { Text("Week") },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Ember, selectedLabelColor = Color(0xFF1A0D04)
+                    selectedContainerColor = Ember, selectedLabelColor = Color(0xFF160B30)
                 )
             )
             Spacer(Modifier.width(8.dp))
@@ -113,10 +119,26 @@ fun StatsScreen(profileId: String) {
                 selected = !weekMode, onClick = { weekMode = false },
                 label = { Text("Month") },
                 colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Ember, selectedLabelColor = Color(0xFF1A0D04)
+                    selectedContainerColor = Ember, selectedLabelColor = Color(0xFF160B30)
                 )
             )
         }
+
+        Surface(shape = RoundedCornerShape(18.dp), color = Surface1, modifier = Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.LocalFireDepartment, contentDescription = null, tint = EmberGlow, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Maintenance: ≈ ${Calories.maintenanceKcalPerDay(profile)} kcal/day to stay at ${if (profile.weightKg % 1.0 == 0.0) profile.weightKg.toInt().toString() else profile.weightKg.toString()} kg",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Sand
+                )
+            }
+        }
+        Spacer(Modifier.height(16.dp))
 
         if (all.isEmpty()) {
             EmptyState(

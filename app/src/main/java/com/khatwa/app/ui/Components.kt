@@ -116,7 +116,7 @@ fun PulseStartButton(enabled: Boolean, onClick: () -> Unit) {
             Icon(
                 Icons.Filled.PlayArrow,
                 contentDescription = "Start",
-                tint = Color(0xFF1A0D04),
+                tint = Color(0xFF160B30),
                 modifier = Modifier.size(46.dp)
             )
         }
@@ -207,7 +207,7 @@ fun TypeSelector(selected: ActivityType, enabled: Boolean, onSelect: (ActivityTy
                 tween(250), label = "chip"
             )
             val fg by animateColorAsState(
-                if (isSel) Color(0xFF1A0D04) else Muted,
+                if (isSel) Color(0xFF160B30) else Muted,
                 tween(250), label = "chipFg"
             )
             Surface(
@@ -513,18 +513,4 @@ fun SplitBars(splits: List<Split>) {
             }
         }
     }
-}
-
-// ---------------------------------------------------------------- attribution
-
-@Composable
-fun OsmAttribution(modifier: Modifier = Modifier) {
-    Text(
-        "© OpenStreetMap contributors",
-        style = MaterialTheme.typography.labelSmall,
-        color = Muted.copy(alpha = 0.9f),
-        modifier = modifier
-            .background(NightBg.copy(alpha = 0.55f), RoundedCornerShape(6.dp))
-            .padding(horizontal = 6.dp, vertical = 2.dp)
-    )
 }

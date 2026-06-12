@@ -49,15 +49,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.android.gms.location.LocationCallback
@@ -65,6 +63,18 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.CameraPosition
+import com.google.android.gms.maps.model.JointType
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.RoundCap
+import com.google.maps.android.compose.CameraMoveStartedReason
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapProperties
+import com.google.maps.android.compose.MapType
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.khatwa.app.data.ActivityType
 import com.khatwa.app.data.Prefs
 import com.khatwa.app.data.Profile
@@ -72,7 +82,6 @@ import com.khatwa.app.tracking.TrackStatus
 import com.khatwa.app.tracking.TrackingManager
 import com.khatwa.app.tracking.TrackingService
 import com.khatwa.app.util.Fmt
-import org.osmdroid.util.GeoPoint
 
 @SuppressLint("MissingPermission")
 @Composable
@@ -85,7 +94,6 @@ fun RecordScreen(
     val prefs = remember { Prefs(ctx) }
     val live by TrackingManager.state.collectAsStateWithLifecycle()
     val idle = live.status == TrackStatus.IDLE
-    val tracking = live.status == TrackStatus.TRACKING
     val isRun = live.type != ActivityType.BIKE
 
     var typeName by rememberSaveable { mutableStateOf(ActivityType.WALK.name) }
@@ -100,6 +108,7 @@ fun RecordScreen(
     var showBatteryDialog by remember { mutableStateOf(false) }
 
     val launchService = {
+        Ads.preload(ctx)   // get the finish-ad ready; never shows an ad on Start
         TrackingService.start(ctx, selectedType, profile.id)
     }
     val afterNotif = {
@@ -171,35 +180,44 @@ fun RecordScreen(
         }
     }
 
-    // ---------------- map ----------------
-    val mapView = rememberMapView()
-    var offlineMap by remember { mutableStateOf(false) }
+    // ---------------- Google Map + follow camera ----------------
+    val cameraState = rememberCameraPositionState {
+        position = CameraPosition.fromLatLngZoom(MapDefaults.START, MapDefaults.START_ZOOM)
+    }
     var follow by remember { mutableStateOf(true) }
-    var centeredOnce by remember { mutableStateOf(false) }
-    val lineWidthPx = with(LocalDensity.current) { 5.dp.toPx() }
-    val routeLine = remember { newRouteLine(Ember.toArgb(), lineWidthPx) }
-    val meMarker = remember { newLocationMarker(mapView, ctx, Teal.toArgb()) }
 
+    // panning / pinching by the user turns follow off
     LaunchedEffect(Unit) {
-        offlineMap = applyTileSource(mapView, ctx)
-        if (!mapView.overlays.contains(routeLine)) mapView.overlays.add(routeLine)
-        if (!mapView.overlays.contains(meMarker)) mapView.overlays.add(meMarker)
-        mapView.invalidate()
+        snapshotFlow { cameraState.cameraMoveStartedReason }
+            .collect { reason ->
+                if (reason == CameraMoveStartedReason.GESTURE) follow = false
+            }
     }
 
-    LaunchedEffect(previewLat, previewLon) {
-        val la = previewLat; val lo = previewLon
-        if (!centeredOnce && la != null && lo != null) {
-            mapView.controller.setZoom(16.5)
-            mapView.controller.animateTo(GeoPoint(la, lo))
-            centeredOnce = true
+    val lastPoint = live.points.lastOrNull()
+    val focusLat = lastPoint?.lat ?: previewLat
+    val focusLon = lastPoint?.lon ?: previewLon
+
+    // while follow is on, keep the camera on the runner at medium zoom
+    LaunchedEffect(follow, focusLat, focusLon) {
+        if (follow && focusLat != null && focusLon != null) {
+            try {
+                cameraState.animate(
+                    CameraUpdateFactory.newLatLngZoom(
+                        LatLng(focusLat, focusLon), MapDefaults.FOLLOW_ZOOM
+                    ),
+                    700
+                )
+            } catch (_: Exception) { }
         }
     }
 
-    // saved -> navigate; messages -> toast
+    // finished -> show interstitial, THEN open the summary
     LaunchedEffect(live.savedId) {
         if (live.savedId != null) {
-            TrackingManager.consumeSaved()?.let { onSaved(it) }
+            TrackingManager.consumeSaved()?.let { id ->
+                Ads.showThen(ctx.findActivity()) { onSaved(id) }
+            }
         }
     }
     LaunchedEffect(live.message) {
@@ -214,23 +232,31 @@ fun RecordScreen(
 
     Box(Modifier.fillMaxSize().background(NightBg)) {
 
-        AndroidView(
-            factory = { mapView },
+        GoogleMap(
             modifier = Modifier.fillMaxSize(),
-            update = { map ->
-                val pts = live.points
-                if (pts.isNotEmpty()) {
-                    routeLine.setPoints(pts.map { GeoPoint(it.lat, it.lon) })
-                    val last = GeoPoint(pts.last().lat, pts.last().lon)
-                    meMarker.position = last
-                    if (follow && !idle) map.controller.animateTo(last)
-                } else {
-                    val la = previewLat; val lo = previewLon
-                    if (la != null && lo != null) meMarker.position = GeoPoint(la, lo)
-                }
-                map.invalidate()
+            cameraPositionState = cameraState,
+            properties = MapProperties(
+                isMyLocationEnabled = hasFine,
+                mapType = MapType.NORMAL
+            ),
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = false,
+                myLocationButtonEnabled = false,
+                compassEnabled = false,
+                mapToolbarEnabled = false
+            )
+        ) {
+            if (live.points.size >= 2) {
+                Polyline(
+                    points = live.points.map { LatLng(it.lat, it.lon) },
+                    color = Ember,
+                    width = 14f,
+                    startCap = RoundCap(),
+                    endCap = RoundCap(),
+                    jointType = JointType.ROUND
+                )
             }
-        )
+        }
 
         // ---------------- top overlay ----------------
         Row(
@@ -256,14 +282,7 @@ fun RecordScreen(
                 }
             }
             Spacer(Modifier.weight(1f))
-            Column(horizontalAlignment = Alignment.End) {
-                GpsPill(if (idle) previewAcc else live.gpsAccuracyM)
-                Spacer(Modifier.height(6.dp))
-                TinyPill(
-                    if (offlineMap) "OFFLINE MAP" else "ONLINE TILES",
-                    if (offlineMap) Teal else Amber
-                )
-            }
+            GpsPill(if (idle) previewAcc else live.gpsAccuracyM)
         }
 
         // ---------------- bottom ----------------
@@ -273,28 +292,19 @@ fun RecordScreen(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                OsmAttribution()
                 Spacer(Modifier.weight(1f))
                 Surface(
                     shape = CircleShape,
                     color = if (follow) Ember else Surface1.copy(alpha = 0.94f),
                     modifier = Modifier.size(46.dp).clip(CircleShape).clickable {
-                        follow = !follow
-                        if (follow) {
-                            val pts = live.points
-                            if (pts.isNotEmpty()) {
-                                mapView.controller.animateTo(GeoPoint(pts.last().lat, pts.last().lon))
-                            } else {
-                                val la = previewLat; val lo = previewLon
-                                if (la != null && lo != null) mapView.controller.animateTo(GeoPoint(la, lo))
-                            }
-                        }
+                        follow = true
+                        // LaunchedEffect above reacts and zooms back onto the runner
                     }
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(
                             Icons.Filled.MyLocation, contentDescription = "Recenter",
-                            tint = if (follow) Color(0xFF1A0D04) else Sand,
+                            tint = if (follow) Color(0xFF160B30) else Sand,
                             modifier = Modifier.size(22.dp)
                         )
                     }
@@ -302,16 +312,12 @@ fun RecordScreen(
             }
 
             if (idle) {
-                Surface(
-                    color = NightBg.copy(alpha = 0.0f)
+                Column(
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Column(
-                        Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        TypeSelector(selectedType, enabled = true) { typeName = it.name }
-                        PulseStartButton(enabled = true, onClick = onStartClick)
-                    }
+                    TypeSelector(selectedType, enabled = true) { typeName = it.name }
+                    PulseStartButton(enabled = true, onClick = onStartClick)
                 }
             } else {
                 Surface(

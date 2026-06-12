@@ -33,6 +33,9 @@ import kotlin.math.max
  */
 object Calories {
 
+    /** Daily calories to maintain current weight: BMR x activity level (TDEE). */
+    fun maintenanceKcalPerDay(p: Profile): Int = (bmrKcalPerDay(p) * p.activityLevel).toInt()
+
     fun bmrKcalPerDay(p: Profile): Double {
         val base = 10.0 * p.weightKg + 6.25 * p.heightCm - 5.0 * p.age
         return if (p.gender == Gender.MALE) base + 5.0 else base - 161.0

@@ -1,5 +1,5 @@
-# Keep mapsforge + osmdroid (reflection-heavy rendering)
--keep class org.mapsforge.** { *; }
--keep class org.osmdroid.** { *; }
--dontwarn org.mapsforge.**
--dontwarn org.osmdroid.**
+# Google Maps + AdMob (release builds)
+-keep class com.google.android.gms.maps.** { *; }
+-keep interface com.google.android.gms.maps.** { *; }
+-keep class com.google.android.gms.ads.** { *; }
+-dontwarn com.google.android.gms.**

@@ -48,10 +48,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.graphics.toArgb
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.JointType
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.RoundCap
+import com.google.maps.android.compose.GoogleMap
+import com.google.maps.android.compose.MapUiSettings
+import com.google.maps.android.compose.Polyline
+import com.google.maps.android.compose.rememberCameraPositionState
 import com.khatwa.app.data.ActivityStore
 import com.khatwa.app.data.ActivitySummary
 import com.khatwa.app.data.ActivityType
@@ -59,7 +64,6 @@ import com.khatwa.app.data.TrackPoint
 import com.khatwa.app.util.Fmt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.osmdroid.util.GeoPoint
 import kotlin.math.max
 
 // ================================================================ history list
@@ -409,26 +413,18 @@ fun DetailScreen(activityId: String, onBack: () -> Unit) {
 
 @Composable
 private fun DetailMap(route: List<TrackPoint>) {
-    val ctx = LocalContext.current
-    val mapView = rememberMapView()
-    val lineWidthPx = with(LocalDensity.current) { 5.dp.toPx() }
-    val routeLine = remember { newRouteLine(Ember.toArgb(), lineWidthPx) }
+    val pts = remember(route) { route.map { LatLng(it.lat, it.lon) } }
+    val cameraState = rememberCameraPositionState()
     val progress = remember { Animatable(0f) }
+    var mapLoaded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        applyTileSource(mapView, ctx)
-        if (!mapView.overlays.contains(routeLine)) mapView.overlays.add(routeLine)
-    }
-    LaunchedEffect(route) {
-        if (route.size >= 2) {
-            val geo = route.map { GeoPoint(it.lat, it.lon) }
-            zoomToRoute(mapView, geo)
-            progress.snapTo(0f)
-            progress.animateTo(1f, tween(1600)) {
-                val n = max(2, (geo.size * value).toInt())
-                routeLine.setPoints(geo.take(n))
-                mapView.invalidate()
+    LaunchedEffect(mapLoaded, pts) {
+        if (mapLoaded && pts.size >= 2) {
+            boundsOf(pts)?.let {
+                try { cameraState.move(CameraUpdateFactory.newLatLngBounds(it, 90)) } catch (_: Exception) { }
             }
+            progress.snapTo(0f)
+            progress.animateTo(1f, tween(1600))
         }
     }
 
@@ -437,9 +433,28 @@ private fun DetailMap(route: List<TrackPoint>) {
         color = Surface1,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(260.dp)
     ) {
-        Box {
-            AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
-            OsmAttribution(Modifier.align(Alignment.BottomStart).padding(6.dp))
+        GoogleMap(
+            modifier = Modifier.fillMaxSize(),
+            cameraPositionState = cameraState,
+            onMapLoaded = { mapLoaded = true },
+            uiSettings = MapUiSettings(
+                zoomControlsEnabled = false,
+                myLocationButtonEnabled = false,
+                compassEnabled = false,
+                mapToolbarEnabled = false
+            )
+        ) {
+            if (pts.size >= 2) {
+                val n = max(2, (pts.size * progress.value).toInt())
+                Polyline(
+                    points = pts.take(n),
+                    color = Ember,
+                    width = 12f,
+                    startCap = RoundCap(),
+                    endCap = RoundCap(),
+                    jointType = JointType.ROUND
+                )
+            }
         }
     }
 }

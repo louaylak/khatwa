@@ -26,7 +26,8 @@ data class Profile(
     val name: String,
     val gender: Gender,
     val age: Int,
-    val heightCm: Int,
+    val heightCm: Double,
+    val activityLevel: Double = 1.375,   // BMR multiplier: 1.2 sedentary .. 1.725 very active
     val weightKg: Double,
     val avatarPath: String? = null
 )
@@ -68,6 +69,7 @@ object Json {
     fun profileToJson(p: Profile): JSONObject = JSONObject().apply {
         put("id", p.id); put("name", p.name); put("gender", p.gender.name)
         put("age", p.age); put("heightCm", p.heightCm); put("weightKg", p.weightKg)
+        put("activityLevel", p.activityLevel)
         put("avatarPath", p.avatarPath ?: JSONObject.NULL)
     }
 
@@ -76,8 +78,9 @@ object Json {
         name = o.getString("name"),
         gender = if (o.optString("gender") == "FEMALE") Gender.FEMALE else Gender.MALE,
         age = o.optInt("age", 25),
-        heightCm = o.optInt("heightCm", 170),
+        heightCm = o.optDouble("heightCm", 170.0),
         weightKg = o.optDouble("weightKg", 70.0),
+        activityLevel = o.optDouble("activityLevel", 1.375),
         avatarPath = if (o.isNull("avatarPath")) null else o.optString("avatarPath")
     )
 

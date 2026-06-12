@@ -9,13 +9,13 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// ----- Night asphalt + Saharan ember palette -----
+// ----- Night asphalt + electric violet palette -----
 val NightBg = Color(0xFF0C1118)
 val Surface1 = Color(0xFF151D27)
 val Surface2 = Color(0xFF1C2735)
-val Ember = Color(0xFFFF6A1F)
-val EmberDeep = Color(0xFFE04E00)
-val EmberGlow = Color(0xFFFFB07A)
+val Ember = Color(0xFF8B5CF6)
+val EmberDeep = Color(0xFF6D28D9)
+val EmberGlow = Color(0xFFC4B5FD)
 val Teal = Color(0xFF2FD6A8)
 val Sand = Color(0xFFF4EDE4)
 val Muted = Color(0xFF9AA7B5)
@@ -25,7 +25,7 @@ val Outline = Color(0xFF2B3645)
 
 private val scheme = darkColorScheme(
     primary = Ember,
-    onPrimary = Color(0xFF1A0D04),
+    onPrimary = Color(0xFF160B30),
     primaryContainer = EmberDeep,
     onPrimaryContainer = Sand,
     secondary = Teal,

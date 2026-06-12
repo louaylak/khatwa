@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -66,6 +67,7 @@ import com.khatwa.app.data.Gender
 import com.khatwa.app.data.Prefs
 import com.khatwa.app.data.Profile
 import com.khatwa.app.data.ProfileStore
+import com.khatwa.app.tracking.Calories
 import java.io.File
 
 // ---------------------------------------------------------------- avatar
@@ -197,7 +199,8 @@ fun ProfileEditScreen(
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var gender by remember { mutableStateOf(existing?.gender ?: Gender.MALE) }
     var age by remember { mutableStateOf(existing?.age?.toString() ?: "25") }
-    var height by remember { mutableStateOf(existing?.heightCm?.toString() ?: "172") }
+    var height by remember { mutableStateOf(existing?.heightCm?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "172") }
+    var level by remember { mutableStateOf(existing?.activityLevel ?: 1.375) }
     var weight by remember { mutableStateOf(existing?.weightKg?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: "70") }
     var pickedUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -208,7 +211,7 @@ fun ProfileEditScreen(
 
     val valid = name.trim().isNotEmpty() &&
             (age.toIntOrNull() ?: 0) in 5..110 &&
-            (height.toIntOrNull() ?: 0) in 90..230 &&
+            (height.toDoubleOrNull() ?: 0.0) in 90.0..230.0 &&
             (weight.toDoubleOrNull() ?: 0.0) in 25.0..250.0
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
@@ -248,7 +251,7 @@ fun ProfileEditScreen(
                     photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }
             ) {
-                Avatar(existing?.copy(name = name.ifBlank { "?" }) ?: Profile("?", name.ifBlank { "?" }, gender, 0, 0, 0.0), 116, pickedPreview = pickedUri)
+                Avatar(existing?.copy(name = name.ifBlank { "?" }) ?: Profile(id = "?", name = name.ifBlank { "?" }, gender = gender, age = 0, heightCm = 0.0, weightKg = 0.0), 116, pickedPreview = pickedUri)
             }
             Box(
                 Modifier
@@ -258,7 +261,7 @@ fun ProfileEditScreen(
                     .background(Ember),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(Icons.Filled.PhotoCamera, contentDescription = "Pick photo", tint = Color(0xFF1A0D04), modifier = Modifier.size(19.dp))
+                Icon(Icons.Filled.PhotoCamera, contentDescription = "Pick photo", tint = Color(0xFF160B30), modifier = Modifier.size(19.dp))
             }
         }
         Spacer(Modifier.height(22.dp))
@@ -281,7 +284,7 @@ fun ProfileEditScreen(
                 label = { Text("Male") },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Ember,
-                    selectedLabelColor = Color(0xFF1A0D04)
+                    selectedLabelColor = Color(0xFF160B30)
                 )
             )
             FilterChip(
@@ -290,7 +293,7 @@ fun ProfileEditScreen(
                 label = { Text("Female") },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = Ember,
-                    selectedLabelColor = Color(0xFF1A0D04)
+                    selectedLabelColor = Color(0xFF160B30)
                 )
             )
         }
@@ -306,7 +309,7 @@ fun ProfileEditScreen(
                 modifier = Modifier.weight(1f)
             )
             OutlinedTextField(
-                value = height, onValueChange = { height = it.filter { c -> c.isDigit() }.take(3) },
+                value = height, onValueChange = { height = it.filter { c -> c.isDigit() || c == '.' }.take(5) },
                 label = { Text("Height cm") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -322,6 +325,45 @@ fun ProfileEditScreen(
                 modifier = Modifier.weight(1f)
             )
         }
+        Spacer(Modifier.height(18.dp))
+
+        Text("ACTIVITY LEVEL · for daily maintenance calories", style = MaterialTheme.typography.labelMedium, color = Muted)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf(
+                "Sedentary" to 1.2, "Light" to 1.375, "Moderate" to 1.55, "Active" to 1.725
+            ).forEach { (lbl, f) ->
+                FilterChip(
+                    selected = level == f,
+                    onClick = { level = f },
+                    label = { Text(lbl) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Ember,
+                        selectedLabelColor = Color(0xFF160B30)
+                    )
+                )
+            }
+        }
+        if (valid) {
+            Spacer(Modifier.height(12.dp))
+            val maint = Calories.maintenanceKcalPerDay(
+                Profile(
+                    id = "preview", name = "preview", gender = gender,
+                    age = age.toIntOrNull() ?: 25,
+                    heightCm = height.toDoubleOrNull() ?: 170.0,
+                    activityLevel = level,
+                    weightKg = weight.toDoubleOrNull() ?: 70.0
+                )
+            )
+            Text(
+                "Your body needs ≈ $maint kcal/day to maintain $weight kg",
+                style = MaterialTheme.typography.bodyMedium,
+                color = EmberGlow
+            )
+        }
         Spacer(Modifier.height(26.dp))
 
         Button(
@@ -333,7 +375,8 @@ fun ProfileEditScreen(
                     name = name.trim(),
                     gender = gender,
                     age = age.toIntOrNull() ?: 25,
-                    heightCm = height.toIntOrNull() ?: 170,
+                    heightCm = height.toDoubleOrNull() ?: 170.0,
+                    activityLevel = level,
                     weightKg = weight.toDoubleOrNull() ?: 70.0,
                     avatarPath = avatarPath
                 )

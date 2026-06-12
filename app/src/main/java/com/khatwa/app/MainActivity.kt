@@ -5,15 +5,25 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -23,12 +33,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -38,19 +53,21 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.khatwa.app.data.Prefs
 import com.khatwa.app.data.ProfileStore
-import com.khatwa.app.map.MapStore
 import com.khatwa.app.tracking.TrackStatus
 import com.khatwa.app.tracking.TrackingManager
+import com.khatwa.app.ui.Ads
 import com.khatwa.app.ui.DetailScreen
+import com.khatwa.app.ui.Ember
+import com.khatwa.app.ui.EmberDeep
+import com.khatwa.app.ui.EmberGlow
 import com.khatwa.app.ui.HistoryScreen
 import com.khatwa.app.ui.KhatwaTheme
-import com.khatwa.app.ui.MapSetupScreen
 import com.khatwa.app.ui.Muted
-import com.khatwa.app.ui.Ember
 import com.khatwa.app.ui.NightBg
 import com.khatwa.app.ui.ProfileEditScreen
 import com.khatwa.app.ui.ProfilePickerScreen
 import com.khatwa.app.ui.RecordScreen
+import com.khatwa.app.ui.Sand
 import com.khatwa.app.ui.StatsScreen
 import com.khatwa.app.ui.Surface1
 import com.khatwa.app.ui.Surface2
@@ -64,8 +81,45 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             KhatwaTheme {
-                AppRoot()
+                var gateDone by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) {
+                    // App-open interstitial: shows once if available, never blocks
+                    // more than ~4.5 s on a bad connection.
+                    try {
+                        Ads.awaitOpenAd(this@MainActivity)
+                    } catch (_: Exception) { }
+                    gateDone = true
+                }
+                if (gateDone) AppRoot() else SplashGate()
             }
+        }
+    }
+}
+
+@Composable
+private fun SplashGate() {
+    val inf = rememberInfiniteTransition(label = "splash")
+    val a by inf.animateFloat(
+        0.35f, 1f,
+        infiniteRepeatable(tween(800), RepeatMode.Reverse),
+        label = "blink"
+    )
+    Box(
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(listOf(NightBg, EmberDeep.copy(alpha = 0.35f), NightBg))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("Khatwa", style = MaterialTheme.typography.displayMedium, color = Ember)
+            Text("خطوة", style = MaterialTheme.typography.titleLarge, color = EmberGlow)
+            Spacer(Modifier.height(18.dp))
+            Text(
+                "loading…",
+                style = MaterialTheme.typography.labelMedium,
+                color = Muted,
+                modifier = Modifier.alpha(a)
+            )
         }
     }
 }
@@ -77,25 +131,11 @@ fun AppRoot() {
     val prefs = remember { Prefs(ctx) }
 
     val start = remember {
-        val mapReady = MapStore.isReady(ctx)
         val hasProfile = prefs.activeProfileId?.let { ProfileStore(ctx).get(it) } != null
-        when {
-            !mapReady && !prefs.mapPromptDone -> "setup"
-            !hasProfile -> "profiles"
-            else -> "main"
-        }
+        if (hasProfile) "main" else "profiles"
     }
 
     NavHost(navController = nav, startDestination = start) {
-
-        composable("setup") {
-            MapSetupScreen(onDone = {
-                val hasProfile = prefs.activeProfileId?.let { ProfileStore(ctx).get(it) } != null
-                nav.navigate(if (hasProfile) "main" else "profiles") {
-                    popUpTo("setup") { inclusive = true }
-                }
-            })
-        }
 
         composable("profiles") {
             ProfilePickerScreen(
@@ -198,7 +238,7 @@ fun MainScaffold(nav: NavHostController) {
                     onSaved = { id -> nav.navigate("detail/$id") }
                 )
                 1 -> HistoryScreen(profile.id, onOpen = { nav.navigate("detail/$it") })
-                else -> StatsScreen(profile.id)
+                else -> StatsScreen(profile)
             }
         }
     }

@@ -56,12 +56,10 @@ dependencies {
     // GPS
     implementation("com.google.android.gms:play-services-location:21.3.0")
 
-    // Offline map: osmdroid + mapsforge renderer (OpenStreetMap data)
-    implementation("org.osmdroid:osmdroid-android:6.1.20")
-    implementation("org.osmdroid:osmdroid-mapsforge:6.1.20")
-    implementation("org.mapsforge:mapsforge-map-android:0.20.0")
-    implementation("org.mapsforge:mapsforge-map:0.20.0")
-    implementation("org.mapsforge:mapsforge-themes:0.20.0")
+    // Google Maps (Compose) + AdMob
+    implementation("com.google.maps.android:maps-compose:6.1.2")
+    implementation("com.google.android.gms:play-services-maps:19.0.0")
+    implementation("com.google.android.gms:play-services-ads:23.6.0")
 
     // Avatar images
     implementation("io.coil-kt:coil-compose:2.7.0")
