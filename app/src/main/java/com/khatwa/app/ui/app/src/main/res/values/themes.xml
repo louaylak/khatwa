@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.Khatwa" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#0C1118</item>
+        <item name="android:navigationBarColor">#0C1118</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+</resources>
