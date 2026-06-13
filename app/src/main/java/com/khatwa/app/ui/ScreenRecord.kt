@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,12 +50,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,18 +64,13 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.JointType
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.RoundCap
-import com.google.maps.android.compose.CameraMoveStartedReason
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapType
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
 import com.khatwa.app.data.ActivityType
 import com.khatwa.app.data.Prefs
 import com.khatwa.app.data.Profile
@@ -180,18 +176,42 @@ fun RecordScreen(
         }
     }
 
-    // ---------------- Google Map + follow camera ----------------
-    val cameraState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(MapDefaults.START, MapDefaults.START_ZOOM)
-    }
+    // ---------------- MapLibre map + follow camera ----------------
+    val mapView = rememberLifecycleMapView()
+    var handles by remember { mutableStateOf<MapHandles?>(null) }
     var follow by remember { mutableStateOf(true) }
 
-    // panning / pinching by the user turns follow off
+    var charPos by remember { mutableStateOf<android.graphics.PointF?>(null) }
+    var facingLeft by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
-        snapshotFlow { cameraState.cameraMoveStartedReason }
-            .collect { reason ->
-                if (reason == CameraMoveStartedReason.GESTURE) follow = false
+        setupKhatwaMap(ctx, mapView, Ember.toArgb()) { h ->
+            handles = h
+            // panning / pinching by the user turns follow off
+            h.onUserGesture { follow = false }
+            // keep the character glued to the route head on every camera frame
+            h.onCameraMove {
+                val pts = TrackingManager.state.value.points
+                charPos = pts.lastOrNull()?.let { h.project(it.lat, it.lon) }
             }
+        }
+    }
+
+    // blue location puck: only while idle (the character replaces it during a workout)
+    LaunchedEffect(handles, hasFine) {
+        if (hasFine) handles?.enableLocationPuck(ctx)
+    }
+    LaunchedEffect(handles, hasFine, idle) {
+        if (hasFine) handles?.setPuckVisible(idle)
+    }
+
+    // live route line + character position/direction
+    LaunchedEffect(handles, live.points.size) {
+        val h = handles ?: return@LaunchedEffect
+        h.setRoute(live.points)
+        val pts = live.points
+        charPos = pts.lastOrNull()?.let { h.project(it.lat, it.lon) }
+        if (pts.size >= 2) facingLeft = pts.last().lon < pts[pts.size - 2].lon
     }
 
     val lastPoint = live.points.lastOrNull()
@@ -199,16 +219,9 @@ fun RecordScreen(
     val focusLon = lastPoint?.lon ?: previewLon
 
     // while follow is on, keep the camera on the runner at medium zoom
-    LaunchedEffect(follow, focusLat, focusLon) {
+    LaunchedEffect(handles, follow, focusLat, focusLon) {
         if (follow && focusLat != null && focusLon != null) {
-            try {
-                cameraState.animate(
-                    CameraUpdateFactory.newLatLngZoom(
-                        LatLng(focusLat, focusLon), MapDefaults.FOLLOW_ZOOM
-                    ),
-                    700
-                )
-            } catch (_: Exception) { }
+            handles?.followTo(focusLat, focusLon)
         }
     }
 
@@ -232,28 +245,23 @@ fun RecordScreen(
 
     Box(Modifier.fillMaxSize().background(NightBg)) {
 
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraState,
-            properties = MapProperties(
-                isMyLocationEnabled = hasFine,
-                mapType = MapType.NORMAL
-            ),
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                myLocationButtonEnabled = false,
-                compassEnabled = false,
-                mapToolbarEnabled = false
-            )
-        ) {
-            if (live.points.size >= 2) {
-                Polyline(
-                    points = live.points.map { LatLng(it.lat, it.lon) },
-                    color = Ember,
-                    width = 14f,
-                    startCap = RoundCap(),
-                    endCap = RoundCap(),
-                    jointType = JointType.ROUND
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
+
+        // your animated runner, moving on the map with you (2D game style)
+        if (!idle) {
+            charPos?.let { cp ->
+                SportCharacter(
+                    gender = profile.gender,
+                    speedMps = if (live.status == TrackStatus.TRACKING) live.speedMps.toFloat() else 0f,
+                    facingLeft = facingLeft,
+                    modifier = Modifier
+                        .offset {
+                            IntOffset(
+                                (cp.x - 34.dp.toPx()).toInt(),
+                                (cp.y - 66.dp.toPx()).toInt()
+                            )
+                        }
+                        .size(68.dp)
                 )
             }
         }
@@ -311,7 +319,11 @@ fun RecordScreen(
                 }
             }
 
-            if (idle) {
+            AnimatedVisibility(
+                visible = idle,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            ) {
                 Column(
                     Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 6.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
@@ -319,7 +331,12 @@ fun RecordScreen(
                     TypeSelector(selectedType, enabled = true) { typeName = it.name }
                     PulseStartButton(enabled = true, onClick = onStartClick)
                 }
-            } else {
+            }
+            AnimatedVisibility(
+                visible = !idle,
+                enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+            ) {
                 Surface(
                     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                     color = Surface1

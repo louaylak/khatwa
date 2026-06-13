@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -56,6 +57,8 @@ import com.khatwa.app.data.ProfileStore
 import com.khatwa.app.tracking.TrackStatus
 import com.khatwa.app.tracking.TrackingManager
 import com.khatwa.app.ui.Ads
+import com.khatwa.app.ui.CountryScreen
+import com.khatwa.app.ui.RunningIntro
 import com.khatwa.app.ui.DetailScreen
 import com.khatwa.app.ui.Ember
 import com.khatwa.app.ui.EmberDeep
@@ -83,11 +86,15 @@ class MainActivity : ComponentActivity() {
             KhatwaTheme {
                 var gateDone by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) {
+                    val t0 = System.currentTimeMillis()
                     // App-open interstitial: shows once if available, never blocks
                     // more than ~4.5 s on a bad connection.
                     try {
                         Ads.awaitOpenAd(this@MainActivity)
                     } catch (_: Exception) { }
+                    // let the welcome run-across play at least once
+                    val left = 2600 - (System.currentTimeMillis() - t0)
+                    if (left > 0) kotlinx.coroutines.delay(left)
                     gateDone = true
                 }
                 if (gateDone) AppRoot() else SplashGate()
@@ -113,9 +120,10 @@ private fun SplashGate() {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Khatwa", style = MaterialTheme.typography.displayMedium, color = Ember)
             Text("خطوة", style = MaterialTheme.typography.titleLarge, color = EmberGlow)
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(10.dp))
+            RunningIntro()
             Text(
-                "loading…",
+                "every step counts…",
                 style = MaterialTheme.typography.labelMedium,
                 color = Muted,
                 modifier = Modifier.alpha(a)
@@ -132,10 +140,23 @@ fun AppRoot() {
 
     val start = remember {
         val hasProfile = prefs.activeProfileId?.let { ProfileStore(ctx).get(it) } != null
-        if (hasProfile) "main" else "profiles"
+        when {
+            prefs.country == null -> "country"
+            !hasProfile -> "profiles"
+            else -> "main"
+        }
     }
 
     NavHost(navController = nav, startDestination = start) {
+
+        composable("country") {
+            CountryScreen(onDone = {
+                val hasProfile = prefs.activeProfileId?.let { ProfileStore(ctx).get(it) } != null
+                nav.navigate(if (hasProfile) "main" else "profiles") {
+                    popUpTo("country") { inclusive = true }
+                }
+            })
+        }
 
         composable("profiles") {
             ProfilePickerScreen(
@@ -231,14 +252,16 @@ fun MainScaffold(nav: NavHostController) {
         }
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
-            when (tab) {
-                0 -> RecordScreen(
-                    profile = profile,
-                    onOpenProfiles = { nav.navigate("profiles") },
-                    onSaved = { id -> nav.navigate("detail/$id") }
-                )
-                1 -> HistoryScreen(profile.id, onOpen = { nav.navigate("detail/$it") })
-                else -> StatsScreen(profile)
+            Crossfade(targetState = tab, label = "tab") { t ->
+                when (t) {
+                    0 -> RecordScreen(
+                        profile = profile,
+                        onOpenProfiles = { nav.navigate("profiles") },
+                        onSaved = { id -> nav.navigate("detail/$id") }
+                    )
+                    1 -> HistoryScreen(profile.id, onOpen = { nav.navigate("detail/$it") })
+                    else -> StatsScreen(profile)
+                }
             }
         }
     }

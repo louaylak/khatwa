@@ -256,6 +256,10 @@ class Prefs(ctx: Context) {
         get() = sp.getBoolean("mapPromptDone", false)
         set(v) = sp.edit().putBoolean("mapPromptDone", v).apply()
 
+    var country: String?
+        get() = sp.getString("country", null)
+        set(v) { sp.edit().putString("country", v).apply() }
+
     var batteryPromptShown: Boolean
         get() = sp.getBoolean("batteryPromptShown", false)
         set(v) = sp.edit().putBoolean("batteryPromptShown", v).apply()

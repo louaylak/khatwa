@@ -1,6 +1,6 @@
 # Khatwa (خطوة)
 
-A Strava-style GPS activity tracker — now worldwide on **Google Maps**, with a
+A Strava-style GPS activity tracker — now worldwide on **MapLibre + OpenFreeMap** (free, no API key), with a
 violet "night asphalt + electric purple" design, multiple profiles with
 personalized calorie models, and AdMob interstitials.
 
@@ -10,19 +10,20 @@ personalized calorie models, and AdMob interstitials.
 - Per-km splits, history with route maps, elevation + pace charts
 - Weekly / monthly stats + **daily maintenance calories** (BMR × activity level)
 - Background tracking with a live notification
+- Animated 2D game-style characters (Aiko / Kenji, by profile gender): sprint intro on the
+  welcome screen, your runner moves on the map with you at real GPS speed, and sits
+  exhausted next to your results when you finish
+- Country selection on first launch
 - Ads: one interstitial at app open, one after finishing an activity — never on Start
 
 ---
 
-## 1. REQUIRED — Google Maps API key (map is blank without it)
+## 1. The map — MapLibre + OpenFreeMap (free forever)
 
-1. Go to **console.cloud.google.com** → sign in → **New project** (any name).
-2. Menu → **APIs & Services → Library** → search **"Maps SDK for Android"** → **Enable**.
-   (Google may ask to enable billing — the Android Maps SDK itself is free/unlimited;
-   the card is only for identity verification.)
-3. **APIs & Services → Credentials → Create credentials → API key** → copy it.
-4. Open `app/src/main/AndroidManifest.xml` and replace
-   `PASTE_YOUR_GOOGLE_MAPS_KEY_HERE` with your key. Rebuild.
+The map is **MapLibre** (open source) rendering **OpenFreeMap** tiles:
+no API key, no billing, no quotas, worldwide coverage, modern clean look.
+Style URL lives in `ui/Maps.kt` (`liberty`; alternatives: `bright`, `positron`).
+Attribution (© OpenStreetMap / OpenFreeMap) is shown automatically — required, keep it.
 
 ## 2. AdMob — read this before publishing
 

@@ -38,9 +38,6 @@
             android:foregroundServiceType="location" />
 
         <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyAqyu4rHg-bE-XoGUBjVQQD5cC5qs1BHrg" />
-        <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
             android:value="ca-app-pub-6787264530091827~5941720252" />
 

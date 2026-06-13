@@ -49,17 +49,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import com.google.android.gms.maps.CameraUpdateFactory
-import com.google.android.gms.maps.model.JointType
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.RoundCap
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.viewinterop.AndroidView
 import com.khatwa.app.data.ActivityStore
 import com.khatwa.app.data.ActivitySummary
 import com.khatwa.app.data.ActivityType
+import com.khatwa.app.data.Gender
+import com.khatwa.app.data.ProfileStore
 import com.khatwa.app.data.TrackPoint
 import com.khatwa.app.util.Fmt
 import kotlinx.coroutines.Dispatchers
@@ -263,13 +259,29 @@ fun DetailScreen(activityId: String, onBack: () -> Unit) {
             }
         }
 
-        Column(Modifier.padding(horizontal = 22.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(typeIcon(a.type), contentDescription = null, tint = Ember, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(a.title, style = MaterialTheme.typography.headlineSmall, color = Sand)
+        Row(
+            Modifier.padding(horizontal = 22.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val ownerGender = remember(a.profileId) {
+                ProfileStore(ctx).get(a.profileId)?.gender ?: Gender.MALE
             }
-            Text(Fmt.dateLine(a.startEpochMs), style = MaterialTheme.typography.bodySmall, color = Muted)
+            SportCharacter(
+                gender = ownerGender,
+                speedMps = 0f,
+                sitting = true,
+                modifier = Modifier.size(92.dp)
+            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(typeIcon(a.type), contentDescription = null, tint = Ember, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(a.title, style = MaterialTheme.typography.headlineSmall, color = Sand)
+                }
+                Text(Fmt.dateLine(a.startEpochMs), style = MaterialTheme.typography.bodySmall, color = Muted)
+                Text("Workout complete — rest earned.", style = MaterialTheme.typography.bodySmall, color = EmberGlow)
+            }
         }
         Spacer(Modifier.height(14.dp))
 
@@ -413,18 +425,22 @@ fun DetailScreen(activityId: String, onBack: () -> Unit) {
 
 @Composable
 private fun DetailMap(route: List<TrackPoint>) {
-    val pts = remember(route) { route.map { LatLng(it.lat, it.lon) } }
-    val cameraState = rememberCameraPositionState()
+    val ctx = LocalContext.current
+    val mapView = rememberLifecycleMapView()
+    var handles by remember { mutableStateOf<MapHandles?>(null) }
     val progress = remember { Animatable(0f) }
-    var mapLoaded by remember { mutableStateOf(false) }
 
-    LaunchedEffect(mapLoaded, pts) {
-        if (mapLoaded && pts.size >= 2) {
-            boundsOf(pts)?.let {
-                try { cameraState.move(CameraUpdateFactory.newLatLngBounds(it, 90)) } catch (_: Exception) { }
-            }
+    LaunchedEffect(Unit) {
+        setupKhatwaMap(ctx, mapView, Ember.toArgb()) { h -> handles = h }
+    }
+    LaunchedEffect(handles, route) {
+        val h = handles ?: return@LaunchedEffect
+        if (route.size >= 2) {
+            h.fitRoute(route)
             progress.snapTo(0f)
-            progress.animateTo(1f, tween(1600))
+            progress.animateTo(1f, tween(1600)) {
+                h.setRoute(route, max(2, (route.size * value).toInt()))
+            }
         }
     }
 
@@ -433,28 +449,6 @@ private fun DetailMap(route: List<TrackPoint>) {
         color = Surface1,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(260.dp)
     ) {
-        GoogleMap(
-            modifier = Modifier.fillMaxSize(),
-            cameraPositionState = cameraState,
-            onMapLoaded = { mapLoaded = true },
-            uiSettings = MapUiSettings(
-                zoomControlsEnabled = false,
-                myLocationButtonEnabled = false,
-                compassEnabled = false,
-                mapToolbarEnabled = false
-            )
-        ) {
-            if (pts.size >= 2) {
-                val n = max(2, (pts.size * progress.value).toInt())
-                Polyline(
-                    points = pts.take(n),
-                    color = Ember,
-                    width = 12f,
-                    startCap = RoundCap(),
-                    endCap = RoundCap(),
-                    jointType = JointType.ROUND
-                )
-            }
-        }
+        AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
     }
 }

@@ -1,5 +1,5 @@
-# Google Maps + AdMob (release builds)
--keep class com.google.android.gms.maps.** { *; }
--keep interface com.google.android.gms.maps.** { *; }
+# MapLibre + AdMob (release builds)
+-keep class org.maplibre.** { *; }
+-dontwarn org.maplibre.**
 -keep class com.google.android.gms.ads.** { *; }
 -dontwarn com.google.android.gms.**
