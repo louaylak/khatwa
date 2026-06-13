@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -189,29 +190,38 @@ fun RecordScreen(
             handles = h
             // panning / pinching by the user turns follow off
             h.onUserGesture { follow = false }
-            // keep the character glued to the route head on every camera frame
+            // reproject the character on every camera frame (pan / zoom / follow)
             h.onCameraMove {
-                val pts = TrackingManager.state.value.points
-                charPos = pts.lastOrNull()?.let { h.project(it.lat, it.lon) }
+                val live2 = TrackingManager.state.value
+                val p = live2.points.lastOrNull()
+                charPos = if (p != null) h.project(p.lat, p.lon)
+                else { val la = previewLat; val lo = previewLon
+                    if (la != null && lo != null) h.project(la, lo) else null }
             }
         }
     }
 
-    // blue location puck: only while idle (the character replaces it during a workout)
-    LaunchedEffect(handles, hasFine) {
-        if (hasFine) handles?.enableLocationPuck(ctx)
-    }
-    LaunchedEffect(handles, hasFine, idle) {
-        if (hasFine) handles?.setPuckVisible(idle)
-    }
+    // No MapLibre location puck at all — the animated character IS the position marker.
 
-    // live route line + character position/direction
+    // live route line
     LaunchedEffect(handles, live.points.size) {
         val h = handles ?: return@LaunchedEffect
         h.setRoute(live.points)
         val pts = live.points
-        charPos = pts.lastOrNull()?.let { h.project(it.lat, it.lon) }
         if (pts.size >= 2) facingLeft = pts.last().lon < pts[pts.size - 2].lon
+    }
+
+    // continuous projector: keep the character glued to the latest point (or idle fix)
+    // every frame, so it is visible even when standing still.
+    LaunchedEffect(handles) {
+        val h = handles ?: return@LaunchedEffect
+        while (true) {
+            withFrameNanos { }
+            val p = TrackingManager.state.value.points.lastOrNull()
+            charPos = if (p != null) h.project(p.lat, p.lon)
+            else { val la = previewLat; val lo = previewLon
+                if (la != null && lo != null) h.project(la, lo) else charPos }
+        }
     }
 
     val lastPoint = live.points.lastOrNull()
@@ -247,23 +257,21 @@ fun RecordScreen(
 
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
 
-        // your animated runner, moving on the map with you (2D game style)
-        if (!idle) {
-            charPos?.let { cp ->
-                SportCharacter(
-                    gender = profile.gender,
-                    speedMps = if (live.status == TrackStatus.TRACKING) live.speedMps.toFloat() else 0f,
-                    facingLeft = facingLeft,
-                    modifier = Modifier
-                        .offset {
-                            IntOffset(
-                                (cp.x - 34.dp.toPx()).toInt(),
-                                (cp.y - 66.dp.toPx()).toInt()
-                            )
-                        }
-                        .size(68.dp)
-                )
-            }
+        // your animated runner, on the map with you (2D game style) — shown idle + tracking
+        charPos?.let { cp ->
+            SportCharacter(
+                gender = profile.gender,
+                speedMps = if (live.status == TrackStatus.TRACKING) live.speedMps.toFloat() else 0f,
+                facingLeft = facingLeft,
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (cp.x - 36.dp.toPx()).toInt(),
+                            (cp.y - 78.dp.toPx()).toInt()
+                        )
+                    }
+                    .size(72.dp)
+            )
         }
 
         // ---------------- top overlay ----------------
